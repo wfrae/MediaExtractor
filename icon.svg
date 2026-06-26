@@ -4,29 +4,16 @@
       <stop offset="0%" stop-color="#0a0a0a"/>
       <stop offset="100%" stop-color="#111111"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="0.8" y2="1">
-      <stop offset="0%" stop-color="#d4c4a8"/>
-      <stop offset="100%" stop-color="#c4b59a"/>
+    <linearGradient id="wht" x1="0" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0e0e0"/>
     </linearGradient>
   </defs>
-  <!-- Background rounded square -->
   <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
-  <!-- Subtle border -->
-  <rect x="4" y="4" width="1016" height="1016" rx="218" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="3"/>
-  <!-- Down arrow / extract symbol -->
-  <g transform="translate(512, 480)">
-    <!-- Arrow shaft -->
-    <rect x="-40" y="-180" width="80" height="260" rx="12" fill="url(#accent)"/>
-    <!-- Arrow head -->
-    <polygon points="-120,80 0,210 120,80" fill="url(#accent)"/>
-    <!-- Base line / tray -->
-    <rect x="-160" y="230" width="320" height="12" rx="6" fill="#ffffff" fill-opacity="0.25"/>
-    <!-- Side walls of tray -->
-    <rect x="-160" y="160" width="12" height="82" rx="6" fill="#ffffff" fill-opacity="0.25"/>
-    <rect x="148" y="160" width="12" height="82" rx="6" fill="#ffffff" fill-opacity="0.25"/>
+  <rect x="3" y="3" width="1018" height="1018" rx="219" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+  <g transform="translate(512, 470)">
+    <rect x="-36" y="-190" width="72" height="260" rx="14" fill="url(#wht)"/>
+    <polygon points="-115,70 0,200 115,70" fill="url(#wht)"/>
+    <path d="M-155,160 L-155,240 Q-155,250 -145,250 L145,250 Q155,250 155,240 L155,160" fill="none" stroke="#ffffff" stroke-opacity="0.3" stroke-width="10" stroke-linecap="round"/>
   </g>
-  <!-- Small decorative dots -->
-  <circle cx="280" cy="780" r="6" fill="#d4c4a8" opacity="0.2"/>
-  <circle cx="310" cy="780" r="6" fill="#d4c4a8" opacity="0.15"/>
-  <circle cx="340" cy="780" r="6" fill="#d4c4a8" opacity="0.1"/>
 </svg>

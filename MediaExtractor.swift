@@ -283,18 +283,9 @@ struct ContentView: View {
     }
 
     private func sidebarBtn(_ label: String, _ icon: String, _ item: SidebarItem) -> some View {
-        Button {
+        SidebarButton(label: label, icon: icon, isSelected: selected == item) {
             withAnimation(.easeInOut(duration: 0.12)) { selected = item }
-        } label: {
-            HStack(spacing: 9) {
-                Image(systemName: icon).font(.system(size: 13)).frame(width: 18)
-                Text(label).font(.system(.body, design: .rounded).weight(selected == item ? .semibold : .regular))
-            }
-            .foregroundStyle(selected == item ? T.text : T.muted.opacity(0.8))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 7).fill(selected == item ? Color.white.opacity(0.07) : .clear))
-        }.buttonStyle(.plain).pointer(scale: 1.02)
+        }
     }
 
     @ViewBuilder private var detailView: some View {
@@ -496,60 +487,119 @@ struct MediaView: View {
     }
 
     private var historySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Recent Downloads").font(.system(.subheadline, design: .rounded).weight(.medium)).foregroundStyle(T.muted)
-            ForEach(Array(vm.history.prefix(20).enumerated()), id: \.element.id) { idx, rec in
-                HStack(spacing: 10) {
-                    statusIcon(rec.status).font(.system(size: 14))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(rec.title).font(.system(.caption, design: .rounded).weight(.medium)).foregroundStyle(T.text).lineLimit(1)
-                        HStack(spacing: 6) {
-                            if let p = rec.platform { Text(p.rawValue).foregroundStyle(T.accent) }
-                            if rec.fileSize > 0 { Text(formatBytes(rec.fileSize)).foregroundStyle(T.muted) }
-                            if let e = rec.error { Text(e).foregroundStyle(T.danger).lineLimit(1) }
-                            Text(rec.date.formatted(date: .omitted, time: .shortened)).foregroundStyle(T.muted)
-                        }.font(.system(.caption2, design: .rounded))
-                    }
-                    Spacer()
-                    if rec.status == .downloading {
-                        ProgressView().controlSize(.mini).tint(T.accent)
-                        Button { vm.cancelDownload(id: rec.id) } label: {
-                            Image(systemName: "xmark.circle").font(.system(size: 13)).foregroundStyle(T.danger.opacity(0.7))
-                        }.buttonStyle(.plain).pointer()
-                    }
-                    if rec.status == .failed || rec.status == .cancelled {
-                        Button {
-                            let cookies = rec.platform.flatMap { p in accounts.accounts.first { $0.platform == p } }.flatMap { accounts.getCookies(forAccount: $0.id) }
-                            vm.retryDownload(id: rec.id, cookies: cookies)
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "arrow.clockwise").font(.system(size: 10))
-                                Text("Retry").font(.system(.caption2, design: .rounded).weight(.semibold))
-                            }.foregroundStyle(T.accent).padding(.horizontal, 8).padding(.vertical, 4)
-                                .background(Capsule().fill(T.accent.opacity(0.1)))
-                        }.buttonStyle(.plain).pointer()
-                    }
-                    if rec.status == .complete, let path = rec.filePath {
-                        Button { NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "") } label: {
-                            Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(T.muted)
-                        }.buttonStyle(.plain).pointer()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Download History").font(.system(.subheadline, design: .rounded).weight(.medium)).foregroundStyle(T.muted)
+                Text("\(vm.history.count)").font(.system(.caption2, design: .rounded).weight(.bold)).foregroundStyle(T.muted)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(T.surface))
+                Spacer()
+                if !vm.history.isEmpty {
+                    Button { withAnimation { vm.history.removeAll() } } label: {
+                        Text("Clear All").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted.opacity(0.5))
+                    }.buttonStyle(.plain).pointer()
+                }
+            }
+            ForEach(vm.history) { rec in
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6).fill(T.surface).frame(width: 44, height: 44)
+                            if let p = rec.platform {
+                                Image(systemName: platformIcon(p)).font(.system(size: 18)).foregroundStyle(T.accent.opacity(0.6))
+                            } else {
+                                Image(systemName: "link").font(.system(size: 16)).foregroundStyle(T.muted)
+                            }
+                            VStack {
+                                Spacer()
+                                HStack {
+                                    Spacer()
+                                    statusDot(rec.status).frame(width: 10, height: 10).offset(x: 2, y: 2)
+                                }
+                            }.frame(width: 44, height: 44)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Button {
+                                if let url = URL(string: rec.url) { NSWorkspace.shared.open(url) }
+                            } label: {
+                                Text(rec.url)
+                                    .font(.system(.caption, design: .rounded).weight(.medium))
+                                    .foregroundStyle(T.accent)
+                                    .lineLimit(1).truncationMode(.middle)
+                            }.buttonStyle(.plain).pointer()
+
+                            HStack(spacing: 8) {
+                                if let p = rec.platform {
+                                    Text(p.rawValue).font(.system(.caption2, design: .rounded).weight(.semibold))
+                                        .foregroundStyle(T.text.opacity(0.5))
+                                }
+                                Label(rec.date.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                                    .font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                                if rec.fileSize > 0 {
+                                    Label(formatBytes(rec.fileSize), systemImage: "doc").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                                }
+                                statusLabel(rec.status)
+                            }
+                            if let e = rec.error {
+                                Text(e).font(.system(.caption2, design: .rounded)).foregroundStyle(T.danger.opacity(0.7)).lineLimit(1)
+                            }
+                        }
+                        Spacer()
+
+                        VStack(spacing: 4) {
+                            if rec.status == .downloading {
+                                ProgressView().controlSize(.mini).tint(T.accent)
+                                Button { vm.cancelDownload(id: rec.id) } label: {
+                                    Image(systemName: "xmark.circle").font(.system(size: 13)).foregroundStyle(T.danger.opacity(0.7))
+                                }.buttonStyle(.plain).pointer()
+                            }
+                            if rec.status == .failed || rec.status == .cancelled {
+                                Button {
+                                    let cookies = rec.platform.flatMap { p in accounts.accounts.first { $0.platform == p } }.flatMap { accounts.getCookies(forAccount: $0.id) }
+                                    vm.retryDownload(id: rec.id, cookies: cookies)
+                                } label: {
+                                    Image(systemName: "arrow.clockwise").font(.system(size: 13)).foregroundStyle(T.accent)
+                                }.buttonStyle(.plain).pointer()
+                            }
+                            if rec.status == .complete, let path = rec.filePath {
+                                Button { NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "") } label: {
+                                    Image(systemName: "folder").font(.system(size: 13)).foregroundStyle(T.muted)
+                                }.buttonStyle(.plain).pointer()
+                            }
+                        }
                     }
                 }
-                .padding(10).background(RoundedRectangle(cornerRadius: 8).fill(T.surface))
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
                 .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
-                .animation(.spring(duration: 0.3), value: rec.status)
             }
         }
     }
 
-    @ViewBuilder private func statusIcon(_ s: DLStatus) -> some View {
-        switch s {
-        case .downloading: Image(systemName: "arrow.down.circle").foregroundStyle(T.accent).symbolEffect(.pulse)
-        case .complete: Image(systemName: "checkmark.circle.fill").foregroundStyle(T.success)
-        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(T.danger)
-        case .cancelled: Image(systemName: "minus.circle.fill").foregroundStyle(T.muted)
+    private func platformIcon(_ p: Platform) -> String {
+        switch p {
+        case .instagram: return "camera.fill"
+        case .tiktok: return "music.note"
+        case .twitter: return "bubble.left.fill"
+        case .youtube: return "play.rectangle.fill"
+        case .soundcloud: return "waveform"
+        case .rednote: return "doc.text.fill"
+        case .spotify: return "headphones"
         }
     }
+
+    @ViewBuilder private func statusDot(_ s: DLStatus) -> some View {
+        Circle().fill(s == .complete ? T.success : s == .failed ? T.danger : s == .cancelled ? T.muted : T.accent)
+    }
+
+    @ViewBuilder private func statusLabel(_ s: DLStatus) -> some View {
+        switch s {
+        case .complete: Text("Completed").font(.system(.caption2, design: .rounded).weight(.semibold)).foregroundStyle(T.success)
+        case .failed: Text("Failed").font(.system(.caption2, design: .rounded).weight(.semibold)).foregroundStyle(T.danger)
+        case .cancelled: Text("Cancelled").font(.system(.caption2, design: .rounded).weight(.semibold)).foregroundStyle(T.muted)
+        case .downloading: Text("Downloading...").font(.system(.caption2, design: .rounded).weight(.semibold)).foregroundStyle(T.accent)
+        }
+    }
+
 }
 
 // MARK: - Connections View (Accordion)
@@ -1096,11 +1146,34 @@ struct SettingsView: View {
     @State private var dlFolder: String = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.appendingPathComponent("MediaExtractor").path
     @State private var encryptDownloads = false
     @State private var encryptionPassword = ""
+    @State private var userName: String = NSFullUserName()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Settings").font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(T.text)
+
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle().fill(LinearGradient(colors: [T.accent.opacity(0.3), T.surface], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 52, height: 52)
+                        Text(String(userName.prefix(1)).uppercased())
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundStyle(T.text)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(userName).font(.system(.body, design: .rounded).weight(.semibold)).foregroundStyle(T.text)
+                        Text("Media Extractor v2.0").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(mediaVM.history.count) downloads").font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+                        let totalBytes = mediaVM.history.reduce(Int64(0)) { $0 + $1.fileSize }
+                        Text(formatBytes(totalBytes) + " total").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted.opacity(0.6))
+                    }
+                }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
 
                 settingCard("Download Folder", info: "Where your downloaded files are saved. Pick any folder on your Mac — all media downloads go here.") {
                     HStack {
@@ -1937,6 +2010,29 @@ extension View {
 }
 
 // MARK: - Shared Components
+
+struct SidebarButton: View {
+    let label: String; let icon: String; let isSelected: Bool; let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon).font(.system(size: 13)).frame(width: 18)
+                Text(label).font(.system(.body, design: .rounded).weight(isSelected ? .semibold : .regular))
+            }
+            .foregroundStyle(isSelected ? T.text : hovering ? T.text.opacity(0.7) : T.muted.opacity(0.8))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 7).fill(isSelected ? Color.white.opacity(0.07) : hovering ? Color.white.opacity(0.04) : .clear))
+            .scaleEffect(hovering && !isSelected ? 1.015 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { h in
+            withAnimation(.easeOut(duration: 0.15)) { hovering = h }
+            if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+    }
+}
 
 struct InfoButton: View {
     let text: String
