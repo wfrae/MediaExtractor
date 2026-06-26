@@ -334,20 +334,20 @@ struct ContentView: View {
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Media Extractor")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(T.muted.opacity(0.35))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(T.muted.opacity(0.45))
                 Text("v2.0")
-                    .font(.system(size: 9, weight: .regular, design: .monospaced))
-                    .foregroundStyle(T.muted.opacity(0.2))
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(T.muted.opacity(0.25))
             }
-            .padding(.horizontal, 18).padding(.bottom, 14)
+            .padding(.horizontal, 18).padding(.bottom, 16)
         }
         .background(
             ZStack {
                 VisualEffectBackground()
-                Color.black.opacity(0.3)
+                (themeManager.isDark ? Color.black.opacity(0.3) : Color.white.opacity(0.5))
             }
         )
     }
@@ -713,10 +713,17 @@ struct ConnectionsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Connections").font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(T.text)
             Text("Connect accounts to browse and download authenticated content")
                 .font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield").font(.system(size: 10)).foregroundStyle(T.muted.opacity(0.5))
+                Text("Login cookies are stored securely in your macOS Keychain. You may see a system prompt asking for your password — this is normal. Click \"Always Allow\" so it won't ask again.")
+                    .font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted.opacity(0.6))
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(T.border)))
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1317,12 +1324,42 @@ struct SettingsView: View {
                     }.pickerStyle(.menu)
                 }
 
-                settingCard("yt-dlp", info: "The download engine that powers video/audio downloads. It's a free tool that must be installed separately. If it says 'Not found', open Terminal and type: brew install yt-dlp") {
+                settingCard("yt-dlp", info: "The download engine that powers video/audio downloads. It's a free tool that must be installed separately. If it says 'Not found', click Install below or open Terminal and type: brew install yt-dlp") {
                     let path = MediaExtractorVM.findYtdlp()
-                    HStack {
-                        Text(path.isEmpty ? "Not found" : path).font(.system(.caption, design: .monospaced)).foregroundStyle(path.isEmpty ? T.danger : T.success)
-                        Spacer()
-                        if path.isEmpty { Text("Install: brew install yt-dlp").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted) }
+                    if path.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                ZStack {
+                                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 16)).foregroundStyle(T.danger)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("yt-dlp is not installed").font(.system(.caption, design: .rounded).weight(.semibold)).foregroundStyle(T.danger)
+                                    Text("Required for downloading videos and audio from URLs.")
+                                        .font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                                }
+                            }
+                            Button {
+                                let proc = Process()
+                                proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                                proc.arguments = ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && brew install yt-dlp"]
+                                proc.standardOutput = Pipe(); proc.standardError = Pipe()
+                                try? proc.run()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down.circle").font(.system(size: 12))
+                                    Text("Install yt-dlp").font(.system(.caption, design: .rounded).weight(.semibold))
+                                }
+                                .foregroundStyle(.white).padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(Capsule().fill(T.accent))
+                            }.buttonStyle(.plain).pointer()
+                            Text("Requires Homebrew. If you don't have Homebrew, visit brew.sh first.")
+                                .font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted.opacity(0.6))
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundStyle(T.success)
+                            Text(path).font(.system(.caption, design: .monospaced)).foregroundStyle(T.success)
+                        }
                     }
                 }
 
@@ -2149,7 +2186,7 @@ struct SidebarButton: View {
             .foregroundStyle(isSelected ? T.text : hovering ? T.text.opacity(0.7) : T.muted.opacity(0.8))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 7).fill(isSelected ? Color.white.opacity(0.07) : hovering ? Color.white.opacity(0.04) : .clear))
+            .background(RoundedRectangle(cornerRadius: 7).fill(isSelected ? T.text.opacity(0.07) : hovering ? T.text.opacity(0.04) : .clear))
             .scaleEffect(hovering && !isSelected ? 1.015 : 1.0)
         }
         .buttonStyle(.plain)
