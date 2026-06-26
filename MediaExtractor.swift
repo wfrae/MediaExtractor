@@ -854,11 +854,11 @@ struct LoginSheet: View {
                         }
                         .font(.system(.caption, design: .rounded).weight(.semibold))
                         .foregroundStyle(.white).padding(.horizontal, 14).padding(.vertical, 6)
-                        .background(Capsule().fill(T.success)).buttonStyle(.plain)
+                        .background(Capsule().fill(T.success)).buttonStyle(.plain).pointer()
                     }
                 }
                 Button("Cancel") { onCancel() }
-                    .font(.system(.caption, design: .rounded)).foregroundStyle(T.muted).buttonStyle(.plain)
+                    .font(.system(.caption, design: .rounded)).foregroundStyle(T.muted).buttonStyle(.plain).pointer()
             }
             .padding(16)
 
@@ -896,7 +896,7 @@ struct PlatformBrowserView: View {
             HStack(spacing: 12) {
                 Button(action: onClose) {
                     Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold)).foregroundStyle(T.muted)
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).pointer()
                 Image(systemName: platform.icon).foregroundStyle(T.accent)
                 Text(platform.rawValue).font(.system(.headline, design: .rounded)).foregroundStyle(T.text)
                 Spacer()
@@ -993,7 +993,7 @@ struct CSVExtractView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(T.surface))
                 }
                 Spacer()
-                if !manager.csvFiles.isEmpty { Button("Add More") { manager.chooseCSVFiles() }.font(.system(.caption, design: .rounded)).controlSize(.small) }
+                if !manager.csvFiles.isEmpty { Button("Add More") { manager.chooseCSVFiles() }.font(.system(.caption, design: .rounded)).controlSize(.small).pointer() }
             }
             if manager.csvFiles.isEmpty {
                 VStack(spacing: 8) {
@@ -1004,7 +1004,7 @@ struct CSVExtractView: View {
                 .frame(maxWidth: .infinity).frame(height: 120)
                 .background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(
                     RoundedRectangle(cornerRadius: 10).strokeBorder(T.border, style: StrokeStyle(lineWidth: 1, dash: [6, 4]))))
-                .contentShape(Rectangle()).onTapGesture { manager.chooseCSVFiles() }
+                .contentShape(Rectangle()).onTapGesture { manager.chooseCSVFiles() }.pointer()
                 .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
             } else {
                 VStack(spacing: 4) {
@@ -1051,7 +1051,7 @@ struct CSVExtractView: View {
                     Text(manager.baseFolder?.path(percentEncoded: false) ?? "No folder selected")
                         .font(.system(.caption, design: .monospaced)).foregroundStyle(T.text.opacity(manager.baseFolder != nil ? 0.6 : 0.3)).lineLimit(1)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(RoundedRectangle(cornerRadius: 8).fill(T.surface))
-                Button("Choose") { manager.chooseBaseFolder() }.controlSize(.small)
+                Button("Choose") { manager.chooseBaseFolder() }.controlSize(.small).pointer()
             }
         }
     }
@@ -1213,7 +1213,7 @@ struct CSVSessionRow: View {
                 ForEach(session.extractions, id: \.csvFilename) { e in
                     Text("\(e.folderName): \(e.success) OK").font(.system(.caption2, design: .monospaced)).foregroundStyle(T.muted)
                 }
-                HStack { Spacer(); Button(role: .destructive) { onDelete() } label: { Text("Delete").foregroundStyle(T.danger) }.controlSize(.small) }
+                HStack { Spacer(); Button(role: .destructive) { onDelete() } label: { Text("Delete").foregroundStyle(T.danger) }.controlSize(.small).pointer() }
             }
             Button { withAnimation { expanded.toggle() } } label: {
                 Text(expanded ? "Hide" : "Details").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
@@ -1310,7 +1310,7 @@ struct SettingsView: View {
                         Button("Change") {
                             let p = NSOpenPanel(); p.canChooseFiles = false; p.canChooseDirectories = true; p.canCreateDirectories = true
                             if p.runModal() == NSApplication.ModalResponse.OK, let url = p.url { dlFolder = url.path; mediaVM.downloadFolder = url }
-                        }.controlSize(.small)
+                        }.controlSize(.small).pointer()
                     }
                 }
 
@@ -1824,7 +1824,7 @@ struct LogsView: View {
                 Text("Logs").font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(T.text)
                 Spacer()
                 Text("\(vm.entries.count) entries").font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
-                Button("Clear") { vm.clear() }.controlSize(.small)
+                Button("Clear") { vm.clear() }.controlSize(.small).pointer()
             }.padding(24).padding(.bottom, 0)
             ScrollView {
                 LazyVStack(spacing: 4) {
@@ -2607,14 +2607,14 @@ struct KWEditor: View {
                     Text(kw).font(.system(.caption, design: .monospaced).weight(.medium))
                     Button { withAnimation { keywords.removeAll { $0 == kw } }; onChanged() } label: {
                         Image(systemName: "xmark").font(.system(size: 7, weight: .heavy)).foregroundStyle(T.muted)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).pointer()
                 }.foregroundStyle(T.text.opacity(0.7)).padding(.horizontal, 9).padding(.vertical, 5)
                     .background(RoundedRectangle(cornerRadius: 6).fill(T.surface))
             }
             HStack(spacing: 3) {
                 TextField("add", text: $newKW).textFieldStyle(.plain).font(.system(.caption, design: .monospaced)).frame(width: 50)
                     .onSubmit { add() }
-                Button(action: add) { Image(systemName: "plus").font(.system(size: 8, weight: .bold)) }.buttonStyle(.plain)
+                Button(action: add) { Image(systemName: "plus").font(.system(size: 8, weight: .bold)) }.buttonStyle(.plain).pointer()
             }.foregroundStyle(T.muted).padding(.horizontal, 7).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 6).strokeBorder(T.border, lineWidth: 1))
             Spacer()
