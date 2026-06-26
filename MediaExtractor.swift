@@ -443,7 +443,7 @@ struct MediaView: View {
                 if !vm.urlInput.isEmpty {
                     Button { vm.urlInput = ""; showPreview = false; showSuccess = false } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(T.muted)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).pointer()
                 }
             }
             .padding(14)
@@ -554,7 +554,7 @@ struct MediaView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 10).fill(
                         showSuccess ? T.success :
-                        canDownload ? T.accent : Color.gray.opacity(0.3)
+                        canDownload ? T.accent : Color.gray.opacity(0.15)
                     )
                 )
                 .scaleEffect(downloadPulse ? 0.97 : 1.0)
@@ -997,13 +997,19 @@ struct CSVExtractView: View {
             }
             if manager.csvFiles.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "arrow.down.doc").font(.system(size: 28, weight: .light)).foregroundStyle(T.muted)
-                    Text("Drop CSV files here").font(.system(.body, design: .rounded)).foregroundStyle(T.muted)
+                    Image(systemName: isDropTargeted ? "arrow.down.doc.fill" : "arrow.down.doc")
+                        .font(.system(size: 28, weight: .light)).foregroundStyle(isDropTargeted ? T.accent : T.muted)
+                        .scaleEffect(isDropTargeted ? 1.15 : 1.0)
+                        .animation(.easeInOut(duration: 0.2), value: isDropTargeted)
+                    Text(isDropTargeted ? "Drop to add" : "Drop CSV files here")
+                        .font(.system(.body, design: .rounded)).foregroundStyle(isDropTargeted ? T.accent : T.muted)
                     Text("or click to browse").font(.system(.caption, design: .rounded)).foregroundStyle(T.muted.opacity(0.5))
                 }
                 .frame(maxWidth: .infinity).frame(height: 120)
-                .background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(
-                    RoundedRectangle(cornerRadius: 10).strokeBorder(T.border, style: StrokeStyle(lineWidth: 1, dash: [6, 4]))))
+                .background(RoundedRectangle(cornerRadius: 10).fill(isDropTargeted ? T.accent.opacity(0.08) : T.surface).overlay(
+                    RoundedRectangle(cornerRadius: 10).strokeBorder(isDropTargeted ? T.accent : T.border,
+                        style: StrokeStyle(lineWidth: isDropTargeted ? 2 : 1, dash: [6, 4]))))
+                .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
                 .contentShape(Rectangle()).onTapGesture { manager.chooseCSVFiles() }.pointer()
                 .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
             } else {
@@ -1018,7 +1024,7 @@ struct CSVExtractView: View {
                                 .padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(T.success.opacity(0.1))) }
                             Button { manager.removeCSV(id: csv.id) } label: {
                                 Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(T.muted)
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(.plain).pointer()
                         }.padding(.horizontal, 12).padding(.vertical, 8)
                             .background(RoundedRectangle(cornerRadius: 8).fill(T.surface))
                     }
@@ -1100,7 +1106,7 @@ struct CSVExtractView: View {
                 Spacer()
                 Button { NSWorkspace.shared.open(URL(fileURLWithPath: r.baseFolderPath).appendingPathComponent(r.sessionName)) } label: {
                     HStack(spacing: 4) { Image(systemName: "folder"); Text("Open") }.font(.system(.caption, design: .rounded))
-                }.controlSize(.small)
+                }.controlSize(.small).pointer()
             }
             HStack(spacing: 0) {
                 stat("\(r.totalSuccess)", "OK", T.success); Spacer()
@@ -1133,7 +1139,7 @@ struct CSVExtractView: View {
                 Text(manager.phase == .downloading ? "Downloading..." : "Extract Media")
                     .font(.system(.body, design: .rounded).weight(.semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(csvCanExtract ? T.accent : Color.gray.opacity(0.3)))
+                    .background(RoundedRectangle(cornerRadius: 10).fill(csvCanExtract ? T.accent : Color.gray.opacity(0.15)))
             }.buttonStyle(.plain).disabled(!csvCanExtract).pointer(scale: 1.01)
 
             if case .complete = manager.phase, let r = manager.lastResult {
@@ -1492,6 +1498,7 @@ struct DocumentsView: View {
     @ObservedObject var logs: LogStore
     @StateObject private var docVM = DocumentVM()
     @State private var showingFilePicker = false
+    @State private var isDropTargeted = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1516,14 +1523,29 @@ struct DocumentsView: View {
             VStack(spacing: 12) {
                 Button { showingFilePicker = true } label: {
                     VStack(spacing: 12) {
-                        Image(systemName: "doc.badge.plus").font(.system(size: 28)).foregroundStyle(T.accent)
-                        Text("Open Document").font(.system(.body, design: .rounded).weight(.semibold)).foregroundStyle(T.text)
-                        Text("PDF, EPUB").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                        Image(systemName: isDropTargeted ? "arrow.down.doc.fill" : "doc.badge.plus")
+                            .font(.system(size: 28)).foregroundStyle(T.accent)
+                            .scaleEffect(isDropTargeted ? 1.15 : 1.0)
+                            .animation(.easeInOut(duration: 0.2), value: isDropTargeted)
+                        Text(isDropTargeted ? "Drop to Open" : "Open Document")
+                            .font(.system(.body, design: .rounded).weight(.semibold)).foregroundStyle(T.text)
+                        Text("PDF, EPUB — or drag & drop").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
                     }
                     .frame(maxWidth: 280).padding(28)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(T.surface)
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(T.border, style: StrokeStyle(lineWidth: 1, dash: [6, 4]))))
+                    .background(RoundedRectangle(cornerRadius: 12).fill(isDropTargeted ? T.accent.opacity(0.08) : T.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(isDropTargeted ? T.accent : T.border,
+                            style: StrokeStyle(lineWidth: isDropTargeted ? 2 : 1, dash: [6, 4]))))
+                    .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
                 }.buttonStyle(.plain).pointer()
+                .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                    for p in providers {
+                        _ = p.loadObject(ofClass: URL.self) { url, _ in
+                            guard let url, ["pdf", "epub"].contains(url.pathExtension.lowercased()) else { return }
+                            DispatchQueue.main.async { docVM.openDocument(url: url) }
+                        }
+                    }
+                    return true
+                }
             }
 
             if !docVM.recentFiles.isEmpty {
