@@ -23,7 +23,7 @@ struct MediaExtractorApp: App {
 // MARK: - Enums
 
 enum SidebarItem: String, Hashable {
-    case media, connections, csv, settings, logs
+    case media, connections, csv, documents, settings, logs
 }
 
 enum Platform: String, CaseIterable, Codable, Identifiable {
@@ -116,6 +116,7 @@ enum VidFormat: String, CaseIterable { case mp4 = "MP4", webm = "WebM", mkv = "M
 enum AudFormat: String, CaseIterable { case mp3 = "MP3", flac = "FLAC", wav = "WAV", m4a = "M4A" }
 enum AudBitrate: String, CaseIterable { case k128 = "128k", k192 = "192k", k256 = "256k", k320 = "320k" }
 enum PhotoFmt: String, CaseIterable { case original = "Original", jpeg = "JPEG", png = "PNG", webp = "WebP" }
+enum ProcessPriorityLevel: String, CaseIterable { case low = "low", normal = "normal", high = "high" }
 enum KeywordMode: String { case global, perCSV }
 enum CSVPhase: Equatable { case idle, ready, downloading, complete, error(String) }
 enum ExtractionStatus: Equatable { case pending, inProgress(done: Int, total: Int), complete(success: Int, failed: Int) }
@@ -323,6 +324,7 @@ struct ContentView: View {
 
             VStack(spacing: 2) {
                 sidebarBtn("CSV Extractor", "tablecells", .csv)
+                sidebarBtn("Documents", "doc.richtext", .documents)
             }.padding(.horizontal, 10)
 
             Divider().padding(.vertical, 10).padding(.horizontal, 20).opacity(0.2)
@@ -363,6 +365,7 @@ struct ContentView: View {
         case .media: MediaView(vm: mediaVM, accounts: accountVM, logs: logVM)
         case .connections: ConnectionsView(vm: accountVM, logs: logVM)
         case .csv: CSVExtractView(manager: csvVM, logs: logVM)
+        case .documents: DocumentsView(logs: logVM)
         case .settings: SettingsView(mediaVM: mediaVM, logs: logVM)
         case .logs: LogsView(vm: logVM)
         }
@@ -1386,6 +1389,34 @@ struct SettingsView: View {
                     }
                 }
 
+                settingCard("Performance", info: "Fine-tune download speed vs resource usage. More fragments = faster downloads but more CPU. Increase chunk size for large files. Set process priority to control how aggressively downloads compete for system resources.") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 20) {
+                            settingRow("Threads", Picker("", selection: $mediaVM.concurrentFragments) {
+                                ForEach([1, 2, 4, 8, 12, 16], id: \.self) { Text("\($0)") }
+                            }.frame(width: 60).onChange(of: mediaVM.concurrentFragments) { _ in mediaVM.savePerformanceSettings() })
+                            settingRow("Chunk Size", Picker("", selection: $mediaVM.chunkSizeMB) {
+                                ForEach([5, 10, 25, 50, 100], id: \.self) { Text("\($0) MB") }
+                            }.frame(width: 80).onChange(of: mediaVM.chunkSizeMB) { _ in mediaVM.savePerformanceSettings() })
+                        }.pickerStyle(.menu)
+                        HStack(spacing: 20) {
+                            settingRow("CPU Cores", Picker("", selection: $mediaVM.maxCPUCores) {
+                                ForEach(Array(1...ProcessInfo.processInfo.activeProcessorCount), id: \.self) { Text("\($0)") }
+                            }.frame(width: 60).onChange(of: mediaVM.maxCPUCores) { _ in mediaVM.savePerformanceSettings() })
+                            settingRow("RAM Limit", Picker("", selection: $mediaVM.maxRAMMB) {
+                                ForEach([256, 512, 1024, 2048, 4096], id: \.self) { Text("\($0) MB") }
+                            }.frame(width: 80).onChange(of: mediaVM.maxRAMMB) { _ in mediaVM.savePerformanceSettings() })
+                        }.pickerStyle(.menu)
+                        HStack(spacing: 6) {
+                            settingRow("Priority", Picker("", selection: $mediaVM.processPriority) {
+                                ForEach(ProcessPriorityLevel.allCases, id: \.self) { Text($0.rawValue.capitalized) }
+                            }.frame(width: 80).onChange(of: mediaVM.processPriority) { _ in mediaVM.savePerformanceSettings() })
+                        }.pickerStyle(.menu)
+                        Text("Higher thread count and chunk size = faster downloads. Lower priority = less system impact.")
+                            .font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted.opacity(0.6))
+                    }
+                }
+
                 settingCard("Export as ZIP", info: "Bundles all your downloads into a single .zip file. Useful for sending files to someone, making a backup, or moving them to another computer.") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Package your download folder into a ZIP archive for sharing or backup.")
@@ -1455,6 +1486,334 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Documents View (PDF / EPUB Reader)
+
+struct DocumentsView: View {
+    @ObservedObject var logs: LogStore
+    @StateObject private var docVM = DocumentVM()
+    @State private var showingFilePicker = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if docVM.currentDocument == nil {
+                emptyState
+            } else {
+                readerView
+            }
+        }
+        .background(T.bg)
+        .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.pdf, .epub], allowsMultipleSelection: false) { result in
+            if case .success(let urls) = result, let url = urls.first { docVM.openDocument(url: url) }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            Text("Documents").font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(T.text)
+            Text("Read PDFs and EPUBs with a fast, minimal viewer")
+                .font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+
+            VStack(spacing: 12) {
+                Button { showingFilePicker = true } label: {
+                    VStack(spacing: 12) {
+                        Image(systemName: "doc.badge.plus").font(.system(size: 28)).foregroundStyle(T.accent)
+                        Text("Open Document").font(.system(.body, design: .rounded).weight(.semibold)).foregroundStyle(T.text)
+                        Text("PDF, EPUB").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                    }
+                    .frame(maxWidth: 280).padding(28)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(T.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(T.border, style: StrokeStyle(lineWidth: 1, dash: [6, 4]))))
+                }.buttonStyle(.plain).pointer()
+            }
+
+            if !docVM.recentFiles.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Recent").font(.system(.caption, design: .rounded).weight(.medium)).foregroundStyle(T.muted)
+                    ForEach(docVM.recentFiles, id: \.self) { path in
+                        Button {
+                            let url = URL(fileURLWithPath: path)
+                            if FileManager.default.fileExists(atPath: path) { docVM.openDocument(url: url) }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: path.hasSuffix(".pdf") ? "doc.fill" : "book.fill")
+                                    .font(.system(size: 11)).foregroundStyle(T.accent)
+                                Text(URL(fileURLWithPath: path).lastPathComponent)
+                                    .font(.system(.caption, design: .rounded)).foregroundStyle(T.text).lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(T.surface))
+                        }.buttonStyle(.plain).pointer()
+                    }
+                }.frame(maxWidth: 280, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var readerView: some View {
+        VStack(spacing: 0) {
+            readerToolbar
+            Divider().background(T.border)
+            if docVM.isPDF {
+                PDFReaderView(url: docVM.documentURL!, viewModel: docVM)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                EPUBReaderView(url: docVM.documentURL!, viewModel: docVM)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            readerBottomBar
+        }
+    }
+
+    private var readerToolbar: some View {
+        HStack(spacing: 12) {
+            Button { docVM.closeDocument() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.system(size: 10, weight: .semibold))
+                    Text("Library").font(.system(.caption, design: .rounded).weight(.medium))
+                }.foregroundStyle(T.accent)
+            }.buttonStyle(.plain).pointer()
+
+            Divider().frame(height: 16)
+
+            Text(docVM.documentTitle).font(.system(.caption, design: .rounded).weight(.semibold))
+                .foregroundStyle(T.text).lineLimit(1)
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button { docVM.zoomOut() } label: {
+                    Image(systemName: "minus.magnifyingglass").font(.system(size: 12)).foregroundStyle(T.muted)
+                }.buttonStyle(.plain).pointer()
+                Text("\(Int(docVM.zoomLevel * 100))%").font(.system(.caption2, design: .monospaced)).foregroundStyle(T.muted).frame(width: 40)
+                Button { docVM.zoomIn() } label: {
+                    Image(systemName: "plus.magnifyingglass").font(.system(size: 12)).foregroundStyle(T.muted)
+                }.buttonStyle(.plain).pointer()
+            }
+
+            Divider().frame(height: 16)
+
+            Button { docVM.toggleDarkReading() } label: {
+                Image(systemName: docVM.darkReading ? "sun.max" : "moon")
+                    .font(.system(size: 12)).foregroundStyle(docVM.darkReading ? T.accent : T.muted)
+            }.buttonStyle(.plain).pointer()
+
+            Button { showingFilePicker = true } label: {
+                Image(systemName: "plus").font(.system(size: 12)).foregroundStyle(T.muted)
+            }.buttonStyle(.plain).pointer()
+
+            if docVM.isPDF {
+                Button { docVM.toggleTOC() } label: {
+                    Image(systemName: "list.bullet").font(.system(size: 12))
+                        .foregroundStyle(docVM.showTOC ? T.accent : T.muted)
+                }.buttonStyle(.plain).pointer()
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(T.surface)
+    }
+
+    private var readerBottomBar: some View {
+        HStack(spacing: 12) {
+            if docVM.totalPages > 0 {
+                Button { docVM.previousPage() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 10)).foregroundStyle(T.muted)
+                }.buttonStyle(.plain).pointer().disabled(docVM.currentPage <= 1)
+
+                Text("Page \(docVM.currentPage) of \(docVM.totalPages)")
+                    .font(.system(.caption2, design: .monospaced)).foregroundStyle(T.muted)
+
+                Slider(value: Binding(
+                    get: { Double(docVM.currentPage) },
+                    set: { docVM.goToPage(Int($0)) }
+                ), in: 1...Double(max(1, docVM.totalPages)), step: 1)
+                    .frame(maxWidth: 200).controlSize(.mini).tint(T.accent)
+
+                Button { docVM.nextPage() } label: {
+                    Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(T.muted)
+                }.buttonStyle(.plain).pointer().disabled(docVM.currentPage >= docVM.totalPages)
+            }
+            Spacer()
+            if docVM.isPDF {
+                Button {
+                    let panel = NSSavePanel()
+                    panel.allowedContentTypes = [.pdf]
+                    panel.nameFieldStringValue = docVM.documentTitle
+                    if panel.runModal() == .OK, let dest = panel.url, let src = docVM.documentURL {
+                        try? FileManager.default.copyItem(at: src, to: dest)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down").font(.system(size: 10))
+                        Text("Save Copy").font(.system(.caption2, design: .rounded))
+                    }.foregroundStyle(T.muted)
+                }.buttonStyle(.plain).pointer()
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .background(T.surface)
+    }
+}
+
+@MainActor
+final class DocumentVM: ObservableObject {
+    @Published var documentURL: URL?
+    @Published var documentTitle = ""
+    @Published var isPDF = true
+    @Published var currentPage = 1
+    @Published var totalPages = 0
+    @Published var zoomLevel: Double = 1.0
+    @Published var darkReading = false
+    @Published var showTOC = false
+    @Published var recentFiles: [String] = []
+    @Published var currentDocument: String? = nil
+
+    init() {
+        recentFiles = (UserDefaults.standard.stringArray(forKey: "recentDocuments") ?? []).filter {
+            FileManager.default.fileExists(atPath: $0)
+        }
+    }
+
+    func openDocument(url: URL) {
+        _ = url.startAccessingSecurityScopedResource()
+        documentURL = url
+        documentTitle = url.lastPathComponent
+        isPDF = url.pathExtension.lowercased() == "pdf"
+        currentPage = 1
+        currentDocument = url.path
+
+        var recent = recentFiles.filter { $0 != url.path }
+        recent.insert(url.path, at: 0)
+        recentFiles = Array(recent.prefix(10))
+        UserDefaults.standard.set(recentFiles, forKey: "recentDocuments")
+
+        if isPDF {
+            if let doc = PDFKitDocument(url: url) { totalPages = doc.pageCount }
+        }
+    }
+
+    func closeDocument() {
+        if let url = documentURL { url.stopAccessingSecurityScopedResource() }
+        documentURL = nil; currentDocument = nil; documentTitle = ""; totalPages = 0; currentPage = 1
+    }
+
+    func zoomIn() { zoomLevel = min(3.0, zoomLevel + 0.25) }
+    func zoomOut() { zoomLevel = max(0.25, zoomLevel - 0.25) }
+    func toggleDarkReading() { darkReading.toggle() }
+    func toggleTOC() { showTOC.toggle() }
+    func nextPage() { if currentPage < totalPages { currentPage += 1 } }
+    func previousPage() { if currentPage > 1 { currentPage -= 1 } }
+    func goToPage(_ page: Int) { currentPage = max(1, min(totalPages, page)) }
+}
+
+import PDFKit
+typealias PDFKitDocument = PDFKit.PDFDocument
+
+struct PDFReaderView: NSViewRepresentable {
+    let url: URL
+    @ObservedObject var viewModel: DocumentVM
+
+    func makeNSView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayDirection = .vertical
+        pdfView.backgroundColor = .clear
+        if let doc = PDFKitDocument(url: url) {
+            pdfView.document = doc
+            DispatchQueue.main.async { viewModel.totalPages = doc.pageCount }
+        }
+        NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.pageChanged(_:)),
+                                                name: .PDFViewPageChanged, object: pdfView)
+        return pdfView
+    }
+
+    func updateNSView(_ pdfView: PDFView, context: Context) {
+        pdfView.scaleFactor = viewModel.zoomLevel * pdfView.scaleFactorForSizeToFit
+
+        if viewModel.darkReading {
+            pdfView.backgroundColor = NSColor(red: 0.08, green: 0.08, blue: 0.08, alpha: 1)
+        } else {
+            pdfView.backgroundColor = .clear
+        }
+
+        if let doc = pdfView.document, viewModel.currentPage >= 1, viewModel.currentPage <= doc.pageCount {
+            if let page = doc.page(at: viewModel.currentPage - 1), pdfView.currentPage != page {
+                pdfView.go(to: page)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(viewModel: viewModel) }
+
+    class Coordinator: NSObject {
+        let viewModel: DocumentVM
+        init(viewModel: DocumentVM) { self.viewModel = viewModel }
+        @objc func pageChanged(_ notification: Notification) {
+            guard let pdfView = notification.object as? PDFView,
+                  let page = pdfView.currentPage,
+                  let doc = pdfView.document,
+                  let idx = doc.index(for: page) as Int? else { return }
+            DispatchQueue.main.async { self.viewModel.currentPage = idx + 1 }
+        }
+    }
+}
+
+struct EPUBReaderView: NSViewRepresentable {
+    let url: URL
+    @ObservedObject var viewModel: DocumentVM
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.setValue(false, forKey: "drawsBackground")
+        loadEPUB(into: webView)
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        let bgColor = viewModel.darkReading ? "#0a0a0a" : "#ffffff"
+        let textColor = viewModel.darkReading ? "#e0e0e0" : "#1a1a1a"
+        let fontSize = Int(16 * viewModel.zoomLevel)
+        webView.evaluateJavaScript("""
+            document.body.style.backgroundColor='\(bgColor)';
+            document.body.style.color='\(textColor)';
+            document.body.style.fontSize='\(fontSize)px';
+        """)
+    }
+
+    private func loadEPUB(into webView: WKWebView) {
+        let extractDir = FileManager.default.temporaryDirectory.appendingPathComponent("epub_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: extractDir, withIntermediateDirectories: true)
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        proc.arguments = ["-o", url.path, "-d", extractDir.path]
+        proc.standardOutput = Pipe(); proc.standardError = Pipe()
+        try? proc.run(); proc.waitUntilExit()
+
+        let fm = FileManager.default
+        var htmlFile: URL?
+        if let enumerator = fm.enumerator(at: extractDir, includingPropertiesForKeys: nil) {
+            for case let fileURL as URL in enumerator {
+                let ext = fileURL.pathExtension.lowercased()
+                if ext == "xhtml" || ext == "html" || ext == "htm" {
+                    htmlFile = fileURL; break
+                }
+            }
+        }
+
+        if let html = htmlFile {
+            webView.loadFileURL(html, allowingReadAccessTo: extractDir)
+        } else {
+            webView.loadHTMLString("""
+                <html><body style="font-family:-apple-system;color:#888;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+                <div style="text-align:center"><h2>Could not parse EPUB</h2><p>The file format may be unsupported.</p></div></body></html>
+            """, baseURL: nil)
+        }
+    }
+}
+
 // MARK: - Logs View
 
 struct LogsView: View {
@@ -1502,6 +1861,11 @@ final class MediaExtractorVM: ObservableObject {
     @Published var audFormat: AudFormat = .mp3
     @Published var audBitrate: AudBitrate = .k320
     @Published var showLongWarning = false
+    @Published var concurrentFragments: Int = UserDefaults.standard.object(forKey: "concurrentFragments") as? Int ?? 8
+    @Published var maxCPUCores: Int = UserDefaults.standard.object(forKey: "maxCPUCores") as? Int ?? ProcessInfo.processInfo.activeProcessorCount
+    @Published var maxRAMMB: Int = UserDefaults.standard.object(forKey: "maxRAMMB") as? Int ?? 512
+    @Published var chunkSizeMB: Int = UserDefaults.standard.object(forKey: "chunkSizeMB") as? Int ?? 10
+    @Published var processPriority: ProcessPriorityLevel = ProcessPriorityLevel(rawValue: UserDefaults.standard.string(forKey: "processPriority") ?? "normal") ?? .normal
     var downloadFolder: URL
     private var activeTask: Task<Void, Never>?
 
@@ -1509,6 +1873,14 @@ final class MediaExtractorVM: ObservableObject {
         let f = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.appendingPathComponent("MediaExtractor")
         try? FileManager.default.createDirectory(at: f, withIntermediateDirectories: true)
         downloadFolder = f
+    }
+
+    func savePerformanceSettings() {
+        UserDefaults.standard.set(concurrentFragments, forKey: "concurrentFragments")
+        UserDefaults.standard.set(maxCPUCores, forKey: "maxCPUCores")
+        UserDefaults.standard.set(maxRAMMB, forKey: "maxRAMMB")
+        UserDefaults.standard.set(chunkSizeMB, forKey: "chunkSizeMB")
+        UserDefaults.standard.set(processPriority.rawValue, forKey: "processPriority")
     }
 
     var longDownloadWarning: String? {
@@ -1532,7 +1904,8 @@ final class MediaExtractorVM: ObservableObject {
                                   filePath: nil, fileSize: 0, error: nil)
         history.insert(rec, at: 0)
         let result = await Self.downloadURL(url, cookies: cookies, to: downloadFolder,
-                                             vidFmt: vidFormat, quality: quality, audFmt: audFormat, audBit: audBitrate)
+                                             vidFmt: vidFormat, quality: quality, audFmt: audFormat, audBit: audBitrate,
+                                             fragments: concurrentFragments, chunkMB: chunkSizeMB, priority: processPriority)
         if Task.isCancelled {
             if let idx = history.firstIndex(where: { $0.id == rec.id }) {
                 history[idx].status = .cancelled; history[idx].title = "Cancelled"
@@ -1565,7 +1938,8 @@ final class MediaExtractorVM: ObservableObject {
         isDownloading = true
         let handle = Task {
             let result = await Self.downloadURL(url, cookies: cookies, to: downloadFolder,
-                                                 vidFmt: vidFormat, quality: quality, audFmt: audFormat, audBit: audBitrate)
+                                                 vidFmt: vidFormat, quality: quality, audFmt: audFormat, audBit: audBitrate,
+                                                 fragments: concurrentFragments, chunkMB: chunkSizeMB, priority: processPriority)
             if let i = history.firstIndex(where: { $0.id == id }) {
                 history[i].status = result.ok ? .complete : .failed
                 history[i].title = result.ext.isEmpty ? url : "Media\(result.ext)"
@@ -1579,12 +1953,13 @@ final class MediaExtractorVM: ObservableObject {
 
     nonisolated static func downloadURL(_ url: String, cookies: [HTTPCookie]? = nil, to folder: URL,
                                          vidFmt: VidFormat = .mp4, quality: QualityPreset = .best,
-                                         audFmt: AudFormat = .mp3, audBit: AudBitrate = .k320) async -> OneResult {
+                                         audFmt: AudFormat = .mp3, audBit: AudBitrate = .k320,
+                                         fragments: Int = 8, chunkMB: Int = 10, priority: ProcessPriorityLevel = .normal) async -> OneResult {
         let ytdlp = findYtdlp()
         guard !ytdlp.isEmpty else { return OneResult(ok: false, ext: "", bytes: 0, error: "yt-dlp not found. Install: brew install yt-dlp") }
         var args = [url, "-o", "%(title)s.%(ext)s", "-P", folder.path, "--no-playlist", "--no-overwrites",
-                    "--concurrent-fragments", "4", "--retries", "3", "--fragment-retries", "3",
-                    "--buffer-size", "16K", "--http-chunk-size", "10M"]
+                    "--concurrent-fragments", "\(fragments)", "--retries", "5", "--fragment-retries", "5",
+                    "--buffer-size", "64K", "--http-chunk-size", "\(chunkMB)M"]
         let fmtSpec: String
         switch quality {
         case .best: fmtSpec = "bestvideo+bestaudio/best"
@@ -1598,7 +1973,7 @@ final class MediaExtractorVM: ObservableObject {
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("me_cookies_\(UUID().uuidString).txt")
             writeCookieFile(cookies, to: tmp); args += ["--cookies", tmp.path]
         }
-        return await runProcess(path: ytdlp, args: args, folder: folder)
+        return await runProcess(path: ytdlp, args: args, folder: folder, priority: priority)
     }
 
     nonisolated static func findYtdlp() -> String {
@@ -1616,12 +1991,17 @@ final class MediaExtractorVM: ObservableObject {
         try? lines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
     }
 
-    nonisolated static func runProcess(path: String, args: [String], folder: URL) async -> OneResult {
+    nonisolated static func runProcess(path: String, args: [String], folder: URL, priority: ProcessPriorityLevel = .normal) async -> OneResult {
         await withCheckedContinuation { cont in
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: path)
             proc.arguments = args
             proc.environment = ProcessInfo.processInfo.environment
+            switch priority {
+            case .low: proc.qualityOfService = .background
+            case .normal: proc.qualityOfService = .userInitiated
+            case .high: proc.qualityOfService = .userInteractive
+            }
             proc.standardOutput = Pipe(); proc.standardError = Pipe()
             do {
                 try proc.run(); proc.waitUntilExit()
