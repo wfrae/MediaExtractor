@@ -1,19 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0a0a0a"/>
-      <stop offset="100%" stop-color="#111111"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#ededf0"/>
+      <stop offset="100%" stop-color="#dddde2"/>
     </linearGradient>
-    <linearGradient id="wht" x1="0" y1="0" x2="0.5" y2="1">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#e0e0e0"/>
+    <linearGradient id="shape" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#1a1a1c"/>
+      <stop offset="100%" stop-color="#2c2c2e"/>
     </linearGradient>
   </defs>
+  <!-- Off-white background -->
   <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
-  <rect x="3" y="3" width="1018" height="1018" rx="219" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
-  <g transform="translate(512, 470)">
-    <rect x="-36" y="-190" width="72" height="260" rx="14" fill="url(#wht)"/>
-    <polygon points="-115,70 0,200 115,70" fill="url(#wht)"/>
-    <path d="M-155,160 L-155,240 Q-155,250 -145,250 L145,250 Q155,250 155,240 L155,160" fill="none" stroke="#ffffff" stroke-opacity="0.3" stroke-width="10" stroke-linecap="round"/>
-  </g>
+  <!-- Dark border so it's visible -->
+  <rect x="2" y="2" width="1020" height="1020" rx="219" fill="none" stroke="#b0b0b5" stroke-width="1.5"/>
+
+  <!-- Dark rounded container -->
+  <rect x="282" y="242" width="460" height="500" rx="48" fill="url(#shape)"/>
+  <!-- Subtle glass highlight -->
+  <rect x="284" y="244" width="456" height="248" rx="46" fill="#ffffff" fill-opacity="0.03"/>
+
+  <!-- White download arrow -->
+  <rect x="484" y="340" width="56" height="180" rx="10" fill="#ededf0"/>
+  <polygon points="424,510 512,612 600,510" fill="#ededf0"/>
+
+  <!-- Tray with visible strokes -->
+  <path d="M345,640 L345,696 Q345,714 363,714 L661,714 Q679,714 679,696 L679,640" fill="none" stroke="#ededf0" stroke-opacity="0.45" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Gray decorative dots -->
+  <circle cx="372" cy="330" r="7" fill="#7c7c80" opacity="0.45"/>
+  <circle cx="400" cy="330" r="7" fill="#7c7c80" opacity="0.3"/>
+  <circle cx="428" cy="330" r="7" fill="#7c7c80" opacity="0.18"/>
+
+  <!-- Bottom accent bar -->
+  <rect x="430" y="780" width="164" height="3.5" rx="1.75" fill="#aeaeb2"/>
 </svg>

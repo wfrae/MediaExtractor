@@ -312,17 +312,7 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Universal")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .tracking(2.5)
-                    .foregroundStyle(T.muted)
-                Text("Media Extractor")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .tracking(0.3)
-                    .foregroundStyle(LinearGradient(colors: [T.text, T.accent], startPoint: .topLeading, endPoint: .bottomTrailing))
-            }
-            .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 18)
+            Spacer().frame(height: 18)
 
             VStack(spacing: 2) {
                 sidebarBtn("Media", "globe", .media)
@@ -344,12 +334,14 @@ struct ContentView: View {
 
             Spacer()
 
-            HStack(spacing: 5) {
-                Image(systemName: "sparkle").font(.system(size: 9))
-                Text("Media Extractor").font(.system(.caption2, design: .rounded).weight(.medium))
-                Text("v2.0").font(.system(.caption2, design: .monospaced)).opacity(0.4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Media Extractor")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(T.muted.opacity(0.35))
+                Text("v2.0")
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .foregroundStyle(T.muted.opacity(0.2))
             }
-            .foregroundStyle(T.muted.opacity(0.4))
             .padding(.horizontal, 18).padding(.bottom, 14)
         }
         .background(
@@ -457,15 +449,24 @@ struct MediaView: View {
         }
     }
 
+    @State private var previewHeight: CGFloat = 400
+
     private var previewSection: some View {
         VStack(spacing: 8) {
             AdBlockPreviewWebView(urlString: vm.urlInput.trimmingCharacters(in: .whitespacesAndNewlines))
-                .frame(height: 320)
+                .frame(maxWidth: .infinity)
+                .frame(height: previewHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border))
-            if let url = URL(string: vm.urlInput.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                HStack {
-                    Spacer()
+
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 9)).foregroundStyle(T.muted.opacity(0.5))
+                    Slider(value: $previewHeight, in: 200...700, step: 10)
+                        .frame(width: 100).controlSize(.mini).tint(T.accent)
+                }
+                Spacer()
+                if let url = URL(string: vm.urlInput.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     Button {
                         if let brave = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") {
                             NSWorkspace.shared.open([url], withApplicationAt: brave, configuration: .init(), completionHandler: nil)
@@ -479,7 +480,7 @@ struct MediaView: View {
                         }
                         .foregroundStyle(T.muted).padding(.horizontal, 10).padding(.vertical, 5)
                         .background(Capsule().fill(T.surface).overlay(Capsule().strokeBorder(T.border)))
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).pointer()
                 }
             }
         }
@@ -2006,8 +2007,8 @@ struct AdBlockPreviewWebView: NSViewRepresentable {
         <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0a0a0a;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden;font-family:-apple-system,sans-serif}
-        .c{position:relative;width:100%;height:100%}
-        img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
+        .c{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+        img{max-width:100%;max-height:100%;object-fit:contain;opacity:0;transition:opacity .4s}
         img.loaded{opacity:1}
         .play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:72px;height:50px;
               background:rgba(0,0,0,0.75);border-radius:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;
