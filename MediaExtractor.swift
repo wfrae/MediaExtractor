@@ -9,10 +9,12 @@ import CryptoKit
 
 @main
 struct MediaExtractorApp: App {
+    @StateObject private var themeManager = ThemeManager.shared
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .preferredColorScheme(.dark)
+                .environmentObject(themeManager)
+                .preferredColorScheme(themeManager.isDark ? .dark : .light)
         }
         .defaultSize(width: 1100, height: 850)
     }
@@ -184,22 +186,98 @@ struct CSVEntry: Identifiable {
 
 // MARK: - Theme
 
+enum AppTheme: String, CaseIterable, Identifiable {
+    case midnight = "Midnight"
+    case dracula = "Dracula"
+    case catppuccin = "Catppuccin"
+    case oneDark = "One Dark"
+    case nord = "Nord"
+    case ayu = "Ayu"
+    case light = "Light"
+    case rosePine = "Ros\u{00e9} Pine"
+    var id: String { rawValue }
+}
+
+class ThemeManager: ObservableObject {
+    static let shared = ThemeManager()
+    @Published var current: AppTheme {
+        didSet { UserDefaults.standard.set(current.rawValue, forKey: "appTheme") }
+    }
+    init() {
+        let saved = UserDefaults.standard.string(forKey: "appTheme") ?? "Midnight"
+        self.current = AppTheme(rawValue: saved) ?? .midnight
+    }
+    var isDark: Bool { current != .light }
+}
+
 enum T {
-    static let bg = Color(red: 0.04, green: 0.04, blue: 0.04)
-    static let surface = Color(white: 0.08)
-    static let surfaceHover = Color(white: 0.12)
-    static let border = Color.white.opacity(0.06)
-    static let text = Color(red: 0.91, green: 0.90, blue: 0.88)
-    static let muted = Color.white.opacity(0.35)
-    static let accent = Color(red: 0.77, green: 0.71, blue: 0.61)
-    static let accentDim = Color(red: 0.77, green: 0.71, blue: 0.61).opacity(0.4)
-    static let success = Color(red: 0.4, green: 0.75, blue: 0.4)
-    static let danger = Color(red: 0.85, green: 0.35, blue: 0.35)
+    private static var tm: ThemeManager { ThemeManager.shared }
+    static var bg: Color { palette.bg }
+    static var surface: Color { palette.surface }
+    static var surfaceHover: Color { palette.surfaceHover }
+    static var border: Color { palette.border }
+    static var text: Color { palette.text }
+    static var muted: Color { palette.muted }
+    static var accent: Color { palette.accent }
+    static var accentDim: Color { palette.accent.opacity(0.4) }
+    static var success: Color { palette.success }
+    static var danger: Color { palette.danger }
+
+    static var palette: ThemePalette {
+        switch tm.current {
+        case .midnight: return .midnight
+        case .dracula: return .dracula
+        case .catppuccin: return .catppuccin
+        case .oneDark: return .oneDark
+        case .nord: return .nord
+        case .ayu: return .ayu
+        case .light: return .light
+        case .rosePine: return .rosePine
+        }
+    }
+}
+
+struct ThemePalette {
+    let bg, surface, surfaceHover, border, text, muted, accent, success, danger: Color
+
+    static let midnight = ThemePalette(
+        bg: Color(red: 0.04, green: 0.04, blue: 0.04), surface: Color(white: 0.08), surfaceHover: Color(white: 0.12),
+        border: Color.white.opacity(0.06), text: Color(red: 0.91, green: 0.90, blue: 0.88), muted: Color.white.opacity(0.35),
+        accent: Color(red: 0.77, green: 0.71, blue: 0.61), success: Color(red: 0.4, green: 0.75, blue: 0.4), danger: Color(red: 0.85, green: 0.35, blue: 0.35))
+    static let dracula = ThemePalette(
+        bg: Color(red: 0.16, green: 0.16, blue: 0.21), surface: Color(red: 0.21, green: 0.22, blue: 0.28), surfaceHover: Color(red: 0.26, green: 0.27, blue: 0.34),
+        border: Color(red: 0.38, green: 0.40, blue: 0.53).opacity(0.3), text: Color(red: 0.97, green: 0.97, blue: 0.95), muted: Color(red: 0.62, green: 0.66, blue: 0.76),
+        accent: Color(red: 0.74, green: 0.58, blue: 0.98), success: Color(red: 0.31, green: 0.98, blue: 0.48), danger: Color(red: 1.0, green: 0.33, blue: 0.33))
+    static let catppuccin = ThemePalette(
+        bg: Color(red: 0.12, green: 0.12, blue: 0.18), surface: Color(red: 0.16, green: 0.16, blue: 0.23), surfaceHover: Color(red: 0.20, green: 0.20, blue: 0.28),
+        border: Color(red: 0.27, green: 0.28, blue: 0.35).opacity(0.4), text: Color(red: 0.80, green: 0.84, blue: 0.96), muted: Color(red: 0.44, green: 0.46, blue: 0.58),
+        accent: Color(red: 0.54, green: 0.71, blue: 0.98), success: Color(red: 0.65, green: 0.89, blue: 0.63), danger: Color(red: 0.95, green: 0.55, blue: 0.66))
+    static let oneDark = ThemePalette(
+        bg: Color(red: 0.16, green: 0.18, blue: 0.20), surface: Color(red: 0.20, green: 0.22, blue: 0.24), surfaceHover: Color(red: 0.24, green: 0.26, blue: 0.29),
+        border: Color(red: 0.30, green: 0.33, blue: 0.36).opacity(0.4), text: Color(red: 0.67, green: 0.73, blue: 0.82), muted: Color(red: 0.40, green: 0.44, blue: 0.50),
+        accent: Color(red: 0.38, green: 0.71, blue: 0.93), success: Color(red: 0.60, green: 0.80, blue: 0.40), danger: Color(red: 0.88, green: 0.43, blue: 0.45))
+    static let nord = ThemePalette(
+        bg: Color(red: 0.18, green: 0.20, blue: 0.25), surface: Color(red: 0.23, green: 0.26, blue: 0.32), surfaceHover: Color(red: 0.26, green: 0.30, blue: 0.37),
+        border: Color(red: 0.30, green: 0.34, blue: 0.42).opacity(0.4), text: Color(red: 0.85, green: 0.87, blue: 0.91), muted: Color(red: 0.50, green: 0.55, blue: 0.65),
+        accent: Color(red: 0.53, green: 0.75, blue: 0.82), success: Color(red: 0.64, green: 0.74, blue: 0.55), danger: Color(red: 0.75, green: 0.38, blue: 0.42))
+    static let ayu = ThemePalette(
+        bg: Color(red: 0.06, green: 0.09, blue: 0.11), surface: Color(red: 0.09, green: 0.13, blue: 0.16), surfaceHover: Color(red: 0.12, green: 0.17, blue: 0.21),
+        border: Color(red: 0.18, green: 0.24, blue: 0.28).opacity(0.4), text: Color(red: 0.70, green: 0.74, blue: 0.77), muted: Color(red: 0.36, green: 0.41, blue: 0.46),
+        accent: Color(red: 1.0, green: 0.70, blue: 0.28), success: Color(red: 0.67, green: 0.85, blue: 0.38), danger: Color(red: 1.0, green: 0.44, blue: 0.37))
+    static let light = ThemePalette(
+        bg: Color(red: 0.97, green: 0.97, blue: 0.97), surface: Color.white, surfaceHover: Color(red: 0.94, green: 0.94, blue: 0.95),
+        border: Color.black.opacity(0.08), text: Color(red: 0.13, green: 0.13, blue: 0.15), muted: Color.black.opacity(0.40),
+        accent: Color(red: 0.20, green: 0.40, blue: 0.90), success: Color(red: 0.20, green: 0.65, blue: 0.32), danger: Color(red: 0.85, green: 0.25, blue: 0.25))
+    static let rosePine = ThemePalette(
+        bg: Color(red: 0.14, green: 0.13, blue: 0.19), surface: Color(red: 0.18, green: 0.17, blue: 0.24), surfaceHover: Color(red: 0.22, green: 0.20, blue: 0.28),
+        border: Color(red: 0.29, green: 0.27, blue: 0.35).opacity(0.4), text: Color(red: 0.88, green: 0.85, blue: 0.87), muted: Color(red: 0.52, green: 0.49, blue: 0.56),
+        accent: Color(red: 0.92, green: 0.60, blue: 0.64), success: Color(red: 0.62, green: 0.78, blue: 0.60), danger: Color(red: 0.92, green: 0.45, blue: 0.45))
 }
 
 // MARK: - Content View (Custom Sidebar)
 
 struct ContentView: View {
+    @EnvironmentObject var themeManager: ThemeManager
     @State private var selected: SidebarItem = .media
     @State private var sidebarOpen = true
     @StateObject private var mediaVM = MediaExtractorVM()
@@ -219,7 +297,7 @@ struct ContentView: View {
                 .background(T.bg)
         }
         .background(T.bg)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(themeManager.isDark ? .dark : .light)
         .animation(.spring(duration: 0.3, bounce: 0.1), value: sidebarOpen)
         .onAppear { csvVM.loadHistory(); AdBlocker.shared.compile() }
         .toolbar {
@@ -1143,6 +1221,7 @@ struct CSVSessionRow: View {
 struct SettingsView: View {
     @ObservedObject var mediaVM: MediaExtractorVM
     @ObservedObject var logs: LogStore
+    @ObservedObject var themeManager: ThemeManager = ThemeManager.shared
     @State private var dlFolder: String = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.appendingPathComponent("MediaExtractor").path
     @State private var encryptDownloads = false
     @State private var encryptionPassword = ""
@@ -1153,23 +1232,61 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Settings").font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(T.text)
 
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle().fill(LinearGradient(colors: [T.accent.opacity(0.3), T.surface], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 52, height: 52)
-                        Text(String(userName.prefix(1)).uppercased())
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
-                            .foregroundStyle(T.text)
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle().fill(LinearGradient(colors: [T.accent.opacity(0.3), T.surface], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 52, height: 52)
+                            Text(String(userName.prefix(1)).uppercased())
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .foregroundStyle(T.text)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(userName).font(.system(.body, design: .rounded).weight(.semibold)).foregroundStyle(T.text)
+                            Text("Media Extractor v2.0").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(mediaVM.history.count) downloads").font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+                            let totalBytes = mediaVM.history.reduce(Int64(0)) { $0 + $1.fileSize }
+                            Text(formatBytes(totalBytes) + " total").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted.opacity(0.6))
+                        }
                     }
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(userName).font(.system(.body, design: .rounded).weight(.semibold)).foregroundStyle(T.text)
-                        Text("Media Extractor v2.0").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(mediaVM.history.count) downloads").font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
-                        let totalBytes = mediaVM.history.reduce(Int64(0)) { $0 + $1.fileSize }
-                        Text(formatBytes(totalBytes) + " total").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted.opacity(0.6))
+
+                    Divider().background(T.border)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "paintpalette").font(.system(size: 11)).foregroundStyle(T.muted)
+                            Text("Theme").font(.system(.caption, design: .rounded).weight(.medium)).foregroundStyle(T.muted)
+                        }
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                            ForEach(AppTheme.allCases) { theme in
+                                let pal = themePalette(theme)
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.25)) { themeManager.current = theme }
+                                } label: {
+                                    VStack(spacing: 5) {
+                                        RoundedRectangle(cornerRadius: 6).fill(pal.bg)
+                                            .frame(height: 32)
+                                            .overlay(
+                                                HStack(spacing: 2) {
+                                                    Circle().fill(pal.accent).frame(width: 6, height: 6)
+                                                    Circle().fill(pal.success).frame(width: 6, height: 6)
+                                                    Circle().fill(pal.danger).frame(width: 6, height: 6)
+                                                    RoundedRectangle(cornerRadius: 2).fill(pal.surface).frame(width: 18, height: 4)
+                                                }
+                                            )
+                                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(
+                                                themeManager.current == theme ? T.accent : T.border, lineWidth: themeManager.current == theme ? 1.5 : 0.5))
+                                        Text(theme.rawValue)
+                                            .font(.system(.caption2, design: .rounded).weight(themeManager.current == theme ? .bold : .regular))
+                                            .foregroundStyle(themeManager.current == theme ? T.accent : T.muted)
+                                            .lineLimit(1)
+                                    }
+                                }.buttonStyle(.plain).pointer()
+                            }
+                        }
                     }
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -1288,6 +1405,14 @@ struct SettingsView: View {
         HStack(spacing: 6) {
             Text(label).font(.system(.caption, design: .rounded)).foregroundStyle(T.muted).fixedSize()
             content
+        }
+    }
+
+    private func themePalette(_ theme: AppTheme) -> ThemePalette {
+        switch theme {
+        case .midnight: return .midnight; case .dracula: return .dracula; case .catppuccin: return .catppuccin
+        case .oneDark: return .oneDark; case .nord: return .nord; case .ayu: return .ayu
+        case .light: return .light; case .rosePine: return .rosePine
         }
     }
 }
