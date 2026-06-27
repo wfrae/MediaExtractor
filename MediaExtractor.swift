@@ -177,6 +177,19 @@ struct ExtractionRecord: Codable, Identifiable {
 }
 struct OneResult { let ok: Bool; let ext: String; let bytes: Int64; let error: String? }
 
+struct MediaMeta {
+    let title: String; let duration: String; let thumbnail: String; let filesize: String; let uploader: String
+}
+
+struct ScheduledDownload: Identifiable {
+    let id = UUID(); let url: String; let scheduledDate: Date; var completed: Bool = false
+}
+
+struct DownloadStats: Codable {
+    var totalDownloads: Int = 0; var totalBytes: Int64 = 0; var platformCounts: [String: Int] = [:]
+    var speedHistory: [Double] = []; var dailyCounts: [String: Int] = [:]
+}
+
 struct CSVEntry: Identifiable {
     let id = UUID(); let url: URL
     var filename: String { url.lastPathComponent }
@@ -381,12 +394,37 @@ struct MediaView: View {
     @State private var showPreview = false
     @State private var downloadPulse = false
     @State private var showSuccess = false
+    @State private var showBatchPaste = false
+    @State private var batchText = ""
+    @State private var clipboardWatcherEnabled = false
+    @State private var lastClipboard = ""
+    @State private var clipboardURL: String?
+    @State private var showScheduler = false
+    @State private var scheduleDate = Date()
+    @State private var showConvert = false
+    @State private var showStats = false
+    @State private var mediaMeta: MediaMeta?
+    @State private var fetchingMeta = false
+    @State private var metaTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 header
+                if let clip = clipboardURL {
+                    clipboardBanner(clip)
+                }
                 urlInput
+                if fetchingMeta {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small).tint(T.accent)
+                        Text("Fetching media info...").font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+                    }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(T.surface))
+                }
+                if let meta = mediaMeta {
+                    mediaPreviewCard(meta)
+                }
                 if let warning = vm.longDownloadWarning, !vm.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     HStack(spacing: 8) {
                         Image(systemName: "clock.badge.exclamationmark").font(.system(size: 13)).foregroundStyle(T.accent)
@@ -403,19 +441,35 @@ struct MediaView: View {
                     previewSection
                 }
                 formatSection
+                toolRow
                 downloadArea
+                if showBatchPaste { batchPasteSection }
+                if showScheduler { schedulerSection }
+                if showConvert { convertSection }
+                if showStats { statsSection }
                 if !vm.history.isEmpty { historySection }
             }
             .padding(32)
         }
+        .onAppear { startClipboardWatcher() }
+        .onDisappear { clipboardWatcherEnabled = false }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Media Downloader")
-                .font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(T.text)
-            Text("Paste any media link to download")
-                .font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Media Downloader")
+                        .font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(T.text)
+                    Text("Paste any media link to download")
+                        .font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+                }
+                Spacer()
+                Button { withAnimation { showStats.toggle() } } label: {
+                    Image(systemName: "chart.bar.fill").font(.system(size: 14))
+                        .foregroundStyle(showStats ? T.accent : T.muted.opacity(0.5))
+                }.buttonStyle(.plain).pointer()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -430,6 +484,7 @@ struct MediaView: View {
                     .onChange(of: vm.urlInput) { _, val in
                         vm.detectedPlatform = Platform.detect(from: val)
                         showPreview = !val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        fetchMediaMeta(val)
                     }
                 if let p = vm.detectedPlatform {
                     HStack(spacing: 4) {
@@ -441,7 +496,7 @@ struct MediaView: View {
                     .background(Capsule().fill(T.accent.opacity(0.12)))
                 }
                 if !vm.urlInput.isEmpty {
-                    Button { vm.urlInput = ""; showPreview = false; showSuccess = false } label: {
+                    Button { vm.urlInput = ""; showPreview = false; showSuccess = false; mediaMeta = nil } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(T.muted)
                     }.buttonStyle(.plain).pointer()
                 }
@@ -449,6 +504,238 @@ struct MediaView: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(T.surface)
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
+        }
+    }
+
+    private var toolRow: some View {
+        HStack(spacing: 8) {
+            toolBtn("Batch Paste", "doc.on.clipboard", $showBatchPaste)
+            toolBtn("Scheduler", "clock", $showScheduler)
+            toolBtn("Convert", "arrow.triangle.2.circlepath", $showConvert)
+            Spacer()
+        }
+    }
+
+    private func toolBtn(_ label: String, _ icon: String, _ binding: Binding<Bool>) -> some View {
+        Button { withAnimation(.spring(duration: 0.2)) { binding.wrappedValue.toggle() } } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10))
+                Text(label).font(.system(.caption2, design: .rounded).weight(.medium))
+            }
+            .foregroundStyle(binding.wrappedValue ? T.accent : T.muted)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Capsule().fill(binding.wrappedValue ? T.accent.opacity(0.1) : T.surface)
+                .overlay(Capsule().strokeBorder(binding.wrappedValue ? T.accent.opacity(0.3) : T.border)))
+        }.buttonStyle(.plain).pointer()
+    }
+
+    private func clipboardBanner(_ url: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "doc.on.clipboard").font(.system(size: 12)).foregroundStyle(T.accent)
+            Text("Copied URL detected").font(.system(.caption, design: .rounded).weight(.medium)).foregroundStyle(T.text)
+            Spacer()
+            Button {
+                vm.urlInput = url
+                withAnimation { clipboardURL = nil }
+            } label: {
+                Text("Use").font(.system(.caption2, design: .rounded).weight(.bold))
+                    .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Capsule().fill(T.accent))
+            }.buttonStyle(.plain).pointer()
+            Button { withAnimation { clipboardURL = nil } } label: {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(T.muted)
+            }.buttonStyle(.plain).pointer()
+        }
+        .padding(10).background(RoundedRectangle(cornerRadius: 8).fill(T.accent.opacity(0.06))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(T.accent.opacity(0.15))))
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    private func mediaPreviewCard(_ meta: MediaMeta) -> some View {
+        HStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: 8).fill(T.surface).frame(width: 80, height: 60)
+                .overlay(Image(systemName: "play.rectangle.fill").font(.system(size: 24)).foregroundStyle(T.muted.opacity(0.3)))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(meta.title).font(.system(.caption, design: .rounded).weight(.semibold)).foregroundStyle(T.text).lineLimit(2)
+                HStack(spacing: 10) {
+                    if !meta.uploader.isEmpty {
+                        Label(meta.uploader, systemImage: "person").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                    }
+                    if !meta.duration.isEmpty {
+                        Label(meta.duration, systemImage: "clock").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                    }
+                    if !meta.filesize.isEmpty {
+                        Label(meta.filesize, systemImage: "doc").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                    }
+                }
+            }
+            Spacer()
+        }
+        .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private var batchPasteSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Batch Paste").font(.system(.subheadline, design: .rounded).weight(.medium)).foregroundStyle(T.text)
+                Spacer()
+                Text("\(batchText.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count) URLs")
+                    .font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+            }
+            TextEditor(text: $batchText)
+                .font(.system(.caption, design: .monospaced)).foregroundStyle(T.text)
+                .frame(height: 100).padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(T.border)))
+                .scrollContentBackground(.hidden)
+            HStack {
+                Text("One URL per line").font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                Spacer()
+                Button {
+                    let urls = batchText.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    for url in urls { vm.queueDownload(url: url, cookies: nil) }
+                    batchText = ""
+                    withAnimation { showBatchPaste = false }
+                } label: {
+                    Text("Queue All").font(.system(.caption, design: .rounded).weight(.semibold))
+                        .foregroundStyle(.white).padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Capsule().fill(T.accent))
+                }.buttonStyle(.plain).pointer()
+            }
+        }
+        .padding(14).background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private var schedulerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Schedule Download").font(.system(.subheadline, design: .rounded).weight(.medium)).foregroundStyle(T.text)
+            HStack(spacing: 12) {
+                DatePicker("", selection: $scheduleDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden().frame(width: 200)
+                Spacer()
+                Button {
+                    let url = vm.urlInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !url.isEmpty else { return }
+                    vm.scheduleDownload(url: url, at: scheduleDate)
+                    withAnimation { showScheduler = false }
+                } label: {
+                    Text("Schedule").font(.system(.caption, design: .rounded).weight(.semibold))
+                        .foregroundStyle(.white).padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Capsule().fill(T.accent))
+                }.buttonStyle(.plain).pointer()
+            }
+            if !vm.scheduledDownloads.isEmpty {
+                ForEach(vm.scheduledDownloads) { sd in
+                    HStack(spacing: 8) {
+                        Image(systemName: sd.completed ? "checkmark.circle.fill" : "clock").font(.system(size: 11))
+                            .foregroundStyle(sd.completed ? T.success : T.accent)
+                        Text(sd.url).font(.system(.caption2, design: .monospaced)).foregroundStyle(T.text).lineLimit(1)
+                        Spacer()
+                        Text(sd.scheduledDate.formatted(date: .abbreviated, time: .shortened))
+                            .font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+                    }
+                }
+            }
+        }
+        .padding(14).background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private var convertSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Format Converter").font(.system(.subheadline, design: .rounded).weight(.medium)).foregroundStyle(T.text)
+            Text("Convert downloaded media to different formats").font(.system(.caption, design: .rounded)).foregroundStyle(T.muted)
+            HStack(spacing: 10) {
+                convertBtn("MP4 → GIF", "photo.on.rectangle") { vm.convertFile(type: "gif") }
+                convertBtn("Extract Audio", "music.note") { vm.convertFile(type: "audio") }
+                convertBtn("Compress", "arrow.down.right.and.arrow.up.left") { vm.convertFile(type: "compress") }
+            }
+            if let msg = vm.convertStatus {
+                Text(msg).font(.system(.caption2, design: .rounded)).foregroundStyle(T.accent).transition(.opacity)
+            }
+        }
+        .padding(14).background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func convertBtn(_ label: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 16)).foregroundStyle(T.accent)
+                Text(label).font(.system(.caption2, design: .rounded).weight(.medium)).foregroundStyle(T.text)
+            }
+            .frame(maxWidth: .infinity).padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(T.bg).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(T.border)))
+        }.buttonStyle(.plain).pointer()
+    }
+
+    private var statsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Download Statistics").font(.system(.subheadline, design: .rounded).weight(.medium)).foregroundStyle(T.text)
+            HStack(spacing: 0) {
+                statBox("Total", "\(vm.stats.totalDownloads)", T.accent)
+                statBox("Size", formatBytes(vm.stats.totalBytes), T.success)
+                statBox("Platforms", "\(vm.stats.platformCounts.count)", T.muted)
+            }
+            if !vm.stats.platformCounts.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("By Platform").font(.system(.caption2, design: .rounded).weight(.semibold)).foregroundStyle(T.muted)
+                    ForEach(vm.stats.platformCounts.sorted(by: { $0.value > $1.value }), id: \.key) { platform, count in
+                        HStack {
+                            Text(platform).font(.system(.caption, design: .rounded)).foregroundStyle(T.text)
+                            Spacer()
+                            Text("\(count)").font(.system(.caption, design: .monospaced).weight(.semibold)).foregroundStyle(T.accent)
+                            GeometryReader { geo in
+                                let maxCount = vm.stats.platformCounts.values.max() ?? 1
+                                RoundedRectangle(cornerRadius: 2).fill(T.accent.opacity(0.3))
+                                    .frame(width: geo.size.width * CGFloat(count) / CGFloat(maxCount))
+                            }.frame(width: 60, height: 6)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14).background(RoundedRectangle(cornerRadius: 10).fill(T.surface).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(T.border)))
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func statBox(_ label: String, _ value: String, _ color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value).font(.system(.title3, design: .rounded).weight(.bold)).foregroundStyle(color)
+            Text(label).font(.system(.caption2, design: .rounded)).foregroundStyle(T.muted)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private func fetchMediaMeta(_ input: String) {
+        metaTask?.cancel(); mediaMeta = nil
+        let url = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty, url.contains("://") || url.contains(".") else { fetchingMeta = false; return }
+        fetchingMeta = true
+        metaTask = Task {
+            let meta = await MediaExtractorVM.fetchMeta(url)
+            if !Task.isCancelled { mediaMeta = meta; fetchingMeta = false }
+        }
+    }
+
+    private func startClipboardWatcher() {
+        clipboardWatcherEnabled = true
+        lastClipboard = NSPasteboard.general.string(forType: .string) ?? ""
+        Task {
+            while clipboardWatcherEnabled {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard clipboardWatcherEnabled else { break }
+                let current = NSPasteboard.general.string(forType: .string) ?? ""
+                if current != lastClipboard {
+                    lastClipboard = current
+                    let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+                        if Platform.detect(from: trimmed) != nil {
+                            await MainActor.run { withAnimation { clipboardURL = trimmed } }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1888,13 +2175,145 @@ final class MediaExtractorVM: ObservableObject {
     @Published var maxRAMMB: Int = UserDefaults.standard.object(forKey: "maxRAMMB") as? Int ?? 512
     @Published var chunkSizeMB: Int = UserDefaults.standard.object(forKey: "chunkSizeMB") as? Int ?? 10
     @Published var processPriority: ProcessPriorityLevel = ProcessPriorityLevel(rawValue: UserDefaults.standard.string(forKey: "processPriority") ?? "normal") ?? .normal
+    @Published var scheduledDownloads: [ScheduledDownload] = []
+    @Published var convertStatus: String?
+    @Published var stats: DownloadStats
+    @Published var downloadQueue: [String] = []
     var downloadFolder: URL
     private var activeTask: Task<Void, Never>?
+    private var schedulerTimer: Timer?
 
     init() {
         let f = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.appendingPathComponent("MediaExtractor")
         try? FileManager.default.createDirectory(at: f, withIntermediateDirectories: true)
         downloadFolder = f
+        if let data = UserDefaults.standard.data(forKey: "downloadStats"),
+           let saved = try? JSONDecoder().decode(DownloadStats.self, from: data) { stats = saved }
+        else { stats = DownloadStats() }
+        startSchedulerTimer()
+    }
+
+    func queueDownload(url: String, cookies: [HTTPCookie]?) {
+        downloadQueue.append(url)
+        processQueue(cookies: cookies)
+    }
+
+    private func processQueue(cookies: [HTTPCookie]?) {
+        guard !isDownloading, let url = downloadQueue.first else { return }
+        downloadQueue.removeFirst()
+        urlInput = url
+        Task {
+            await download(cookies: cookies)
+            processQueue(cookies: cookies)
+        }
+    }
+
+    func scheduleDownload(url: String, at date: Date) {
+        scheduledDownloads.append(ScheduledDownload(url: url, scheduledDate: date))
+    }
+
+    private func startSchedulerTimer() {
+        schedulerTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let now = Date()
+                for i in self.scheduledDownloads.indices {
+                    if !self.scheduledDownloads[i].completed && self.scheduledDownloads[i].scheduledDate <= now {
+                        self.scheduledDownloads[i].completed = true
+                        self.queueDownload(url: self.scheduledDownloads[i].url, cookies: nil)
+                    }
+                }
+            }
+        }
+    }
+
+    func convertFile(type: String) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.movie, .audio, .mpeg4Movie]
+        panel.canChooseFiles = true
+        guard panel.runModal() == .OK, let inputURL = panel.url else { return }
+        let ytdlp = Self.findYtdlp()
+        let ffmpeg = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].first { FileManager.default.fileExists(atPath: $0) } ?? ""
+        guard !ffmpeg.isEmpty else { convertStatus = "ffmpeg not found. Install: brew install ffmpeg"; return }
+        convertStatus = "Converting..."
+        Task.detached { [weak self] in
+            let outName: String
+            let args: [String]
+            switch type {
+            case "gif":
+                outName = inputURL.deletingPathExtension().lastPathComponent + ".gif"
+                let outPath = inputURL.deletingLastPathComponent().appendingPathComponent(outName).path
+                args = ["-i", inputURL.path, "-vf", "fps=15,scale=480:-1:flags=lanczos", "-y", outPath]
+            case "audio":
+                outName = inputURL.deletingPathExtension().lastPathComponent + ".mp3"
+                let outPath = inputURL.deletingLastPathComponent().appendingPathComponent(outName).path
+                args = ["-i", inputURL.path, "-vn", "-acodec", "libmp3lame", "-ab", "320k", "-y", outPath]
+            case "compress":
+                outName = inputURL.deletingPathExtension().lastPathComponent + "_compressed.mp4"
+                let outPath = inputURL.deletingLastPathComponent().appendingPathComponent(outName).path
+                args = ["-i", inputURL.path, "-vcodec", "libx264", "-crf", "28", "-preset", "fast", "-y", outPath]
+            default: return
+            }
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: ffmpeg)
+            proc.arguments = args
+            proc.standardOutput = Pipe(); proc.standardError = Pipe()
+            try? proc.run(); proc.waitUntilExit()
+            await MainActor.run { [weak self] in
+                self?.convertStatus = proc.terminationStatus == 0 ? "Converted: \(outName)" : "Conversion failed"
+                Task {
+                    try? await Task.sleep(for: .seconds(4))
+                    self?.convertStatus = nil
+                }
+            }
+        }
+    }
+
+    func updateStats(record: DownloadRecord) {
+        if record.status == .complete {
+            stats.totalDownloads += 1
+            stats.totalBytes += record.fileSize
+            let platform = record.platform?.rawValue ?? "Unknown"
+            stats.platformCounts[platform, default: 0] += 1
+            let day = record.date.formatted(date: .abbreviated, time: .omitted)
+            stats.dailyCounts[day, default: 0] += 1
+            saveStats()
+        }
+    }
+
+    private func saveStats() {
+        if let data = try? JSONEncoder().encode(stats) { UserDefaults.standard.set(data, forKey: "downloadStats") }
+    }
+
+    nonisolated static func fetchMeta(_ url: String) async -> MediaMeta? {
+        let ytdlp = findYtdlp()
+        guard !ytdlp.isEmpty else { return nil }
+        return await withCheckedContinuation { cont in
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: ytdlp)
+            proc.arguments = [url, "--dump-json", "--no-download", "--no-playlist"]
+            let pipe = Pipe()
+            proc.standardOutput = pipe; proc.standardError = Pipe()
+            do {
+                try proc.run(); proc.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { cont.resume(returning: nil); return }
+                let title = json["title"] as? String ?? "Unknown"
+                let dur = json["duration"] as? Double ?? 0
+                let mins = Int(dur) / 60; let secs = Int(dur) % 60
+                let durStr = dur > 0 ? "\(mins):\(String(format: "%02d", secs))" : ""
+                let fsize = json["filesize_approx"] as? Int64 ?? json["filesize"] as? Int64 ?? 0
+                let uploader = json["uploader"] as? String ?? json["channel"] as? String ?? ""
+                cont.resume(returning: MediaMeta(title: title, duration: durStr, thumbnail: "", filesize: fsize > 0 ? formatBytesStatic(fsize) : "", uploader: uploader))
+            } catch { cont.resume(returning: nil) }
+        }
+    }
+
+    nonisolated static func formatBytesStatic(_ bytes: Int64) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        if bytes < 1048576 { return "\(bytes / 1024) KB" }
+        if bytes < 1073741824 { return String(format: "%.1f MB", Double(bytes) / 1048576.0) }
+        return String(format: "%.2f GB", Double(bytes) / 1073741824.0)
     }
 
     func savePerformanceSettings() {
@@ -1939,6 +2358,7 @@ final class MediaExtractorVM: ObservableObject {
                 history[idx].filePath = result.ok ? downloadFolder.path : nil
                 history[idx].fileSize = result.bytes
                 history[idx].error = result.error
+                updateStats(record: history[idx])
             }
         }
         isDownloading = false
